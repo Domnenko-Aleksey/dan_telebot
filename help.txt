@@ -1,0 +1,80 @@
+# Документация
+https://github.com/eternnoir/pyTelegramBotAPI#general-api-documentation
+
+# Методы
+https://core.telegram.org/bots/api#available-methods
+
+# Телеграм - бот API на русском
+https://tlgrm.ru/docs/bots/api
+
+# Меняем изображение бота
+Боту @BotFather даем команду /setuserpic
+На запрос «Choose a bot to change profile photo» отправляем @ИМЯ_БОТА -> @coursera_dan_bot
+На запрос «OK. Send me the new profile photo for the bot» отправляем изображение
+
+# Отправка сообщения на chat_id, текст text
+bot.send_message(chat_id = message.chat.id, text)
+
+
+# --- ДЕКОРАТОРЫ ---
+# В декораторе в качестве аргумента можно вызвать функцию (func = check_message), которая вернйт True или False
+# Если True - функция, обёрнутая декоратором - выполнится, False - нет
+# Таким образом можно создать переключатель наподобие switch, создав несколько функций в декораторах
+@bot.message_handler(func = check_message)
+def handle_message(message):
+    print(message.text)
+	
+# Декоратор, обрабатывающий команды
+@bot.message_handler(commands = ['add', 'list', 'reset'])
+@bot.message_handler(func = check_message)
+def handle_message(message):
+    print(message.text)
+
+
+# --- ПОЛУЧЕНИЕ ДАННЫХ ---
+# Контент тип
+# @bot.message_handler(content_types = [content_type])
+text, audio, document, photo, sticker, video, video_note, voice, location, contact, new_chat_members, left_chat_member, new_chat_title, new_chat_photo, delete_chat_photo, group_chat_created, supergroup_chat_created, channel_chat_created, migrate_to_chat_id, migrate_from_chat_id, pinned_message.
+
+# Получение геолокации
+@bot.message_handler(content_types = ['location'])
+def handle_location(message):
+	print(message.location)
+
+
+# --- ОТПРАВКА ДАННЫХ ---	
+# Отпрака геолокации
+bot.send_location(message.chat.id, latitude, longitude)
+
+# Отправка фотографии
+image = open('test.jpg', 'rb')
+bot.send_photo(message.chat.id, image, caption="Описание картинки")
+
+
+# --- БОТ С ПАМЯТЬЮ ---
+# Бот с памятью - создаём словарь, где ключ - id пользователья, а значение - шаг.
+
+
+# --- КЛАВИАТУРА ---
+# Подключение клавиатуры
+from telebot import types
+
+def create_keyboard(buttons_data):
+    # Создаём inline клавиатуру c количеством кнопок в ряду = 2
+    keyboard = types.InlineKeyboardMarkup(row_width=2)
+    # Создаём кнопки - наименование 'key' и передаваемая строка 'callback_data[key]'
+    for key in buttons_data:
+        button = types.InlineKeyboardButton(text=key, callback_data=buttons_data[key])
+        keyboard.add(button)
+    return keyboard
+
+# Создаём клавиатуру
+buttons_data = {
+	'Добавить место': 'add',
+	'Список мест': 'list',
+	'Удалить всё': 'reset',
+	'Помощь': 'help'
+}
+keyboard = create_keyboard(buttons_data)
+bot.send_message(chat_id=message.chat.id, text=t,
+				 parse_mode='HTML', reply_markup=keyboard)
