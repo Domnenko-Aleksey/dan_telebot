@@ -1,5 +1,6 @@
 # dan_bot / coursera_dan_bot
 # 1236969954:AAFFYd_E4RgUPCyOqJfvd33I8q5E0TQ22JM
+# Google Api AIzaSyBJ0kAFsa3hA61MVpbPbtdqjkGuhaay1kg
 # ------- ПРИНЦИП РАБОТЫ -------
 # Бот обрабатывает 3 состояни запросов
 # 1. Команды /add /list /reset /help
@@ -20,22 +21,44 @@
 #   }
 # }
 # user_init - инициализация пользователя - добавление в словарь или обнуление данных
+# --- REDUS ---
+# В REDUS записываем данные в формате
+# time_id = datetime.datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
+# {chat_id: {
+#       time_id: {
+#           'name': 'Место 1',
+#           'location': '50.216169;53.234108',
+#           'photo': '111_222_333.jpg'   
+#       },
+#       time_id: {
+#           'name': 'Место 1',
+#           'location': '50.216169;53.234108',
+#           'photo': '111_222_333.jpg'   
+#       },
+#   } 
+# } 
+#
+#
 
 import datetime
-import pymysql
-import pymysql.cursors
 import telebot
 from telebot import types
 
 token = '1236969954:AAFFYd_E4RgUPCyOqJfvd33I8q5E0TQ22JM'
 bot = telebot.TeleBot(token)
 print('--- BOT START---')
-USER_STATE = {}
-STEPS = ['ADD_NAME', 'ADD_LOCATION', 'ADD_PHOTO']
+
+# REDIS (не используем БД - все храним в словаре STORAGE)
+# r = redis.StrictRedis(host='localhost', port=6379, db=1)
+
+STORAGE = {}  # Хранилищем данных
+USER_STATE = {}  # Временный словарь пользователя
+STEPS = ['ADD_NAME', 'ADD_LOCATION', 'ADD_PHOTO']  # Шаги
 
 
 # Приём прочих сообщений.
 @bot.message_handler(func=lambda message: message.text not in ['/add', '/list', '/reset', '/help'])
+@bot.message_handler(commands=['start'])
 @bot.message_handler(content_types=['location'])
 @bot.message_handler(content_types=['photo'])
 def default_answer(message):
@@ -54,13 +77,8 @@ def default_answer(message):
     else:
         t = "Привет, я <b>учебный бот</b>. Могу соханять и выводить списком геолокации с описанием и фотографиями:\n"
         # Создаём клавиатуру
-        buttons_data = {
-            'Добавить место': 'commands_add',
-            'Список мест': 'commands_list',
-            'Удалить всё': 'commands_reset',
-            'Помощь': 'commands_help'
-        }
-        keyboard = create_keyboard(buttons_data)
+
+        keyboard = create_keyboard()
         bot.send_message(chat_id=message.chat.id, text=t,
                          parse_mode='HTML', reply_markup=keyboard)
 
@@ -97,15 +115,40 @@ def commands_add(message):
 def commands_list(message):
     user_init(message.chat.id)
     location_list = db_get_list(message.chat.id)
-    t = "Список мест: \n"
-    bot.send_message(chat_id=message.chat.id, text=t)
+
+    t = "<b>Список последних 10 мест:</b> \n"
+    bot.send_message(chat_id=message.chat.id, text=t, parse_mode='HTML')
+
+    if message.chat.id in STORAGE:
+        storage_chat = STORAGE[message.chat.id][-1:-11:-1]
+        for item in storage_chat:
+            # t = item['name'] + "\n"
+            t = "\n------------------------------------\n\n"
+
+            image_path = 'photo/' + item['photo']
+            image_file = open(image_path, 'rb')
+            longitude, latitude = item['location'].split(';')
+
+            bot.send_photo(message.chat.id, image_file, caption=item['name'])
+            bot.send_location(message.chat.id, latitude, longitude)
+            bot.send_message(chat_id=message.chat.id, text=t, parse_mode='HTML')
+            
+            t = "Выберите команду:\n"
+    else:
+        t = "<i>Список пуст</i>\n"
+
+    keyboard = create_keyboard()
+    bot.send_message(chat_id=message.chat.id, text=t, parse_mode='HTML', reply_markup=keyboard)
 
 
 # Удалить все локации.
 @bot.message_handler(commands=['reset'])
 def commands_reset(message):
     user_init(message.chat.id)
-    db_delete(message.chat.id)
+
+    if message.chat.id in STORAGE:
+        del STORAGE[message.chat.id]
+
     t = "Все локации удалены. \n"
     bot.send_message(chat_id=message.chat.id, text=t)
     default_answer(message)
@@ -167,6 +210,7 @@ def add_location(message):
 def add_photo(message):
     if not message.photo:
         t = "Ошибка, не выбрано фото. \n"
+        t += "Добавьте фото. \n"
         bot.send_message(chat_id=message.chat.id, text=t, parse_mode='HTML')
         return
 
@@ -188,12 +232,18 @@ def add_photo(message):
     t = "Место добавлено"
     bot.send_message(chat_id=message.chat.id, text=t)
     print("\n======= add_photo(), USER_STATE:", USER_STATE)
-    commands_list(message)
+    default_answer(message)
 
 
 # --- КЛАВИАТУРА ---
 # Создание клавиатуры
-def create_keyboard(buttons_data):
+def create_keyboard():
+    buttons_data = {
+        'Добавить место': 'commands_add',
+        'Список мест': 'commands_list',
+        'Удалить всё': 'commands_reset',
+        'Помощь': 'commands_help'
+    }
     # Создаём inline клавиатуру c количеством кнопок в ряду = 2
     keyboard = types.InlineKeyboardMarkup(row_width=2)
     # Создаём кнопки - наименование 'key' и передаваемая строка 'callback_data[key]'
@@ -217,7 +267,26 @@ def db_add(chat_id):
     name = USER_STATE[chat_id]['add_name']
     location = str(USER_STATE[chat_id]['add_location']['longitude']) + ';' + str(USER_STATE[chat_id]['add_location']['latitude'])
     photo = USER_STATE[chat_id]['add_photo']
+
+    data = {}
+    time_id = datetime.datetime.now().strftime("%d-%m-%Y_%H:%M:%S")
+    data = {
+        'name': name,
+        'location': location,
+        'photo': photo  
+    }
+    data_list = []
+    data_list.append(data)
+
+    if chat_id not in STORAGE:
+        # Создаём запись        
+        STORAGE[chat_id] = data_list
+    else:
+        # Добавляем запись
+        STORAGE[chat_id].append(data)
+
     print("\n======= db_add():\nchat_id:", chat_id, "\nname:", name, "\nlocation:", location, "\nphoto:", photo, "\n")
+    print("\n======= db_add(), STORAGE", STORAGE)
 
 
 # Получаем список мест
